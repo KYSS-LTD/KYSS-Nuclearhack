@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secrethawk"
+version = "0.1.0"
+description = "CLI scanner for early secret leak detection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+secrethawk = "secrethawk.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
