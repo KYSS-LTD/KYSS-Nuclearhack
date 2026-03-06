@@ -7,13 +7,51 @@ import json
 import sys
 from pathlib import Path
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    tomllib = None
+
 from .git_history import scan_git_history
 from .models import ScanReport
 from .notifier import send_telegram_alert
-from .scanner import DEFAULT_IGNORES, iter_files, list_staged_files, scan_files
+from .scanner import DEFAULT_IGNORES, iter_files, list_staged_files, load_ignore_patterns, scan_files
+
+SEVERITY_COLORS = {
+    "critical": "\033[31m",  # red
+    "high": "\033[33m",  # yellow
+    "medium": "\033[34m",  # blue
+    "low": "",
+}
+RESET = "\033[0m"
 
 
-def render_table(report: ScanReport) -> str:
+def _colorize(text: str, severity: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    color = SEVERITY_COLORS.get(severity, "")
+    if not color:
+        return text
+    return f"{color}{text}{RESET}"
+
+
+def mask_sensitive_text(snippet: str) -> str:
+    tokens = snippet.split()
+    if not tokens:
+        return snippet
+
+    masked_tokens: list[str] = []
+    for token in tokens:
+        clean = token.strip("'\"`=,:;()[]{}")
+        if len(clean) < 12:
+            masked_tokens.append(token)
+            continue
+        masked = f"{clean[:4]}{'*' * (len(clean) - 8)}{clean[-4:]}"
+        masked_tokens.append(token.replace(clean, masked, 1))
+    return " ".join(masked_tokens)
+
+
+def render_table(report: ScanReport, use_color: bool = True) -> str:
     lines = []
     summary = report.by_severity()
     lines.append(
@@ -26,8 +64,9 @@ def render_table(report: ScanReport) -> str:
     lines.append("-" * 120)
     for finding in report.findings:
         location = f"{finding.file_path}:{finding.line_number}"
+        severity = _colorize(f"{finding.severity:<10}", finding.severity, use_color)
         lines.append(
-            f"{finding.severity:<10} {finding.detector:<8} {finding.secret_type:<24} {location:<45} {finding.snippet}"
+            f"{severity} {finding.detector:<8} {finding.secret_type:<24} {location:<45} {mask_sensitive_text(finding.snippet)}"
         )
     return "\n".join(lines)
 
@@ -35,20 +74,35 @@ def render_table(report: ScanReport) -> str:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detect secrets in code repositories")
     parser.add_argument("path", nargs="?", default=".", help="Path to repository or project")
-    parser.add_argument("--entropy-threshold", type=float, default=4.5)
+    parser.add_argument("--config", default="nuclear.toml", help="Path to TOML config file")
+    parser.add_argument("--entropy-threshold", type=float, default=None)
     parser.add_argument("--json-out", help="Write report JSON to file")
     parser.add_argument("--only-staged", action="store_true", help="Scan only staged files")
     parser.add_argument("--scan-history", action="store_true", help="Scan git history")
     parser.add_argument("--max-commits", type=int, default=None, help="Max commits for history scan")
     parser.add_argument("--telegram-bot-token", default=None)
     parser.add_argument("--telegram-chat-id", default=None)
+    parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in table output")
+    parser.add_argument("--no-progress", action="store_true", help="Disable file scanning progress indicator")
     parser.add_argument(
         "--fail-on",
         choices=["critical", "high", "medium", "never"],
-        default="high",
+        default=None,
         help="Fail process when this severity or higher is found",
     )
     return parser.parse_args(argv)
+
+
+def load_project_config(root: Path, config_path: str) -> dict:
+    path = root / config_path
+    if not path.exists() or not path.is_file() or tomllib is None:
+        return {}
+    try:
+        with path.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except OSError:
+        return {}
+    return raw.get("secrethawk", raw)
 
 
 def should_fail(report: ScanReport, fail_on: str) -> bool:
@@ -62,22 +116,47 @@ def should_fail(report: ScanReport, fail_on: str) -> bool:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     root = Path(args.path).resolve()
+    config = load_project_config(root, args.config)
+
+    entropy_threshold = args.entropy_threshold
+    if entropy_threshold is None:
+        entropy_threshold = float(config.get("entropy_threshold", 4.5))
+
+    fail_on = args.fail_on or config.get("fail_on", "high")
+    exclude_dirs = set(DEFAULT_IGNORES)
+    exclude_dirs.update(config.get("exclude_dirs", []))
+
+    ignore_patterns = load_ignore_patterns(root)
+    ignore_patterns.extend(config.get("ignore_patterns", []))
 
     if args.only_staged:
         files = list_staged_files(root)
     else:
-        files = iter_files(root, DEFAULT_IGNORES)
+        files = iter_files(root, exclude_dirs, ignore_patterns)
 
-    findings = scan_files(files, base_root=root, entropy_threshold=args.entropy_threshold)
+    def _print_progress(current: int, total: int, path: Path) -> None:
+        if args.no_progress:
+            return
+        print(f"\rScanning files: {current}/{total} ({path.name})", end="", file=sys.stderr, flush=True)
+
+    findings = scan_files(
+        files,
+        base_root=root,
+        entropy_threshold=entropy_threshold,
+        progress_callback=_print_progress if files else None,
+    )
+    if files and not args.no_progress:
+        print(file=sys.stderr)
 
     if args.scan_history:
+        max_commits = args.max_commits if args.max_commits is not None else config.get("max_commits")
         findings.extend(
-            scan_git_history(root, entropy_threshold=args.entropy_threshold, max_commits=args.max_commits)
+            scan_git_history(root, entropy_threshold=entropy_threshold, max_commits=max_commits)
         )
 
     report = ScanReport.create(repository=str(root), findings=findings)
 
-    print(render_table(report))
+    print(render_table(report, use_color=not args.no_color))
 
     if args.json_out:
         out_path = Path(args.json_out)
@@ -92,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             findings=findings,
         )
 
-    return 2 if should_fail(report, args.fail_on) else 0
+    return 2 if should_fail(report, fail_on) else 0
 
 
 if __name__ == "__main__":
