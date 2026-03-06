@@ -130,4 +130,4 @@ Workflow: `.github/workflows/secret-scan.yml`
 6. **Улучшение проверки истории**
    - учитывать rename/копии, гибко настраивать глубину и ветки.
 7. **Тесты и качество**
-   - добавить unit-тесты для `scanner`, `cli`, `git_history`, а также e2e на sample-репозитории.
+   - добавить unit-тесты для `scanner`, `cli`, `git_history`, а также e2e на sample-репозитории
