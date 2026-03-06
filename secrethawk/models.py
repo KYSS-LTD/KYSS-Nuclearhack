@@ -14,7 +14,13 @@ class Finding:
     secret_type: str
     severity: str
     snippet: str
+    explanation: str = ""
+    remediation: list[str] | None = None
     entropy: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.remediation is None:
+            self.remediation = []
 
     def to_dict(self) -> dict:
         return asdict(self)

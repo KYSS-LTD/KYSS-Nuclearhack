@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 
+from .guidance import enrich_with_guidance
 from .models import Finding
 from .patterns import PATTERNS
 
@@ -12,6 +13,9 @@ from .patterns import PATTERNS
 TOKEN_RE = re.compile(r"[A-Za-z0-9+/=_\-]{20,}")
 CONTEXT_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|secret|api[_-]?key|key|credential)\b")
 COMMON_TEST_VALUES = {"example", "sample", "test", "dummy", "placeholder", "changeme"}
+BASE64_RE = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
+HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
+TOKEN_PREFIX_RE = re.compile(r"^(?:AKIA|gh[pousr]_?|xox[baprs]-|AIza|sk_live_|rk_live_)")
 
 
 def shannon_entropy(text: str) -> float:
@@ -36,6 +40,21 @@ def _entropy_severity(line: str) -> str:
     return "high" if CONTEXT_RE.search(line) else "medium"
 
 
+def _entropy_score(token: str) -> int:
+    score = 0
+    if len(token) >= 32:
+        score += 2
+    elif len(token) >= 24:
+        score += 1
+    if BASE64_RE.match(token):
+        score += 1
+    if HEX_RE.match(token) and len(token) >= 32:
+        score += 1
+    if TOKEN_PREFIX_RE.match(token):
+        score += 2
+    return score
+
+
 def analyze_line(file_path: str, line_number: int, line: str, entropy_threshold: float) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -43,7 +62,7 @@ def analyze_line(file_path: str, line_number: int, line: str, entropy_threshold:
         match = secret_pattern.pattern.search(line)
         if match:
             findings.append(
-                Finding(
+                enrich_with_guidance(Finding(
                     file_path=file_path,
                     line_number=line_number,
                     detector="regex",
@@ -51,7 +70,7 @@ def analyze_line(file_path: str, line_number: int, line: str, entropy_threshold:
                     severity=secret_pattern.severity,
                     snippet=line.strip()[:240],
                     entropy=None,
-                )
+                ))
             )
 
     for candidate in TOKEN_RE.findall(line):
@@ -59,16 +78,19 @@ def analyze_line(file_path: str, line_number: int, line: str, entropy_threshold:
             continue
         entropy = shannon_entropy(candidate)
         if entropy >= entropy_threshold:
+            severity = _entropy_severity(line)
+            if _entropy_score(candidate) >= 3 and severity == "medium":
+                severity = "high"
             findings.append(
-                Finding(
+                enrich_with_guidance(Finding(
                     file_path=file_path,
                     line_number=line_number,
                     detector="entropy",
                     secret_type="unknown_high_entropy",
-                    severity=_entropy_severity(line),
+                    severity=severity,
                     snippet=line.strip()[:240],
                     entropy=round(entropy, 3),
-                )
+                ))
             )
 
     return findings

@@ -25,3 +25,16 @@ def test_nuclearignore_excludes_paths(tmp_path: Path) -> None:
     relative = {p.relative_to(tmp_path).as_posix() for p in files}
     assert "keep.txt" in relative
     assert "secrets/key.txt" not in relative
+
+
+def test_secretignore_excludes_paths(tmp_path: Path) -> None:
+    (tmp_path / ".secretignore").write_text("private/*\n", encoding="utf-8")
+    (tmp_path / "private").mkdir()
+    (tmp_path / "private" / "a.txt").write_text("token=12345678901234567890", encoding="utf-8")
+    (tmp_path / "ok.txt").write_text("ok", encoding="utf-8")
+
+    patterns = load_ignore_patterns(tmp_path)
+    files = iter_files(tmp_path, ignore_dirs=set(), ignore_patterns=patterns)
+    relative = {p.relative_to(tmp_path).as_posix() for p in files}
+    assert "ok.txt" in relative
+    assert "private/a.txt" not in relative

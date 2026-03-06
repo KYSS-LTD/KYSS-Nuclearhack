@@ -13,6 +13,7 @@ else:
     tomllib = None
 
 from .git_history import scan_git_history
+from .local_llm import explain_finding_with_ollama
 from .models import ScanReport
 from .notifier import send_telegram_alert
 from .scanner import DEFAULT_IGNORES, iter_files, list_staged_files, load_ignore_patterns, scan_files
@@ -60,13 +61,14 @@ def render_table(report: ScanReport, use_color: bool = True) -> str:
         + f", total={len(report.findings)}"
     )
     lines.append("-" * 120)
-    lines.append(f"{'Severity':<10} {'Detector':<8} {'Type':<24} {'Location':<45} Snippet")
+    lines.append(f"{'Severity':<10} {'Detector':<8} {'Type':<24} {'Location':<45} Details")
     lines.append("-" * 120)
     for finding in report.findings:
         location = f"{finding.file_path}:{finding.line_number}"
         severity = _colorize(f"{finding.severity:<10}", finding.severity, use_color)
         lines.append(
-            f"{severity} {finding.detector:<8} {finding.secret_type:<24} {location:<45} {mask_sensitive_text(finding.snippet)}"
+            f"{severity} {finding.detector:<8} {finding.secret_type:<24} {location:<45} "
+            f"{mask_sensitive_text(finding.snippet)} | Why: {finding.explanation} | Fix: {'; '.join(finding.remediation[:2])}"
         )
     return "\n".join(lines)
 
@@ -80,6 +82,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--only-staged", action="store_true", help="Scan only staged files")
     parser.add_argument("--scan-history", action="store_true", help="Scan git history")
     parser.add_argument("--max-commits", type=int, default=None, help="Max commits for history scan")
+    parser.add_argument("--explain-with-llm", action="store_true", help="Enrich findings with local LLM")
+    parser.add_argument("--llm-model", default="llama3.2:3b", help="Local model name for Ollama")
+    parser.add_argument("--llm-endpoint", default="http://127.0.0.1:11434/api/generate", help="Local LLM endpoint")
     parser.add_argument("--telegram-bot-token", default=None)
     parser.add_argument("--telegram-chat-id", default=None)
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in table output")
@@ -155,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     report = ScanReport.create(repository=str(root), findings=findings)
+
+    if args.explain_with_llm:
+        for finding in report.findings:
+            explain_finding_with_ollama(finding, model=args.llm_model, endpoint=args.llm_endpoint)
 
     print(render_table(report, use_color=not args.no_color))
 

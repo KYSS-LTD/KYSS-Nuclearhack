@@ -10,6 +10,9 @@ def test_regex_aws_detection() -> None:
     line = 'AWS_KEY="AKIA1234567890ABCDEF"'
     findings = analyze_line("app.py", 10, line, entropy_threshold=4.5)
     assert any(f.secret_type == "aws_access_key" for f in findings)
+    aws = next(f for f in findings if f.secret_type == "aws_access_key")
+    assert aws.explanation
+    assert aws.remediation
 
 
 def test_high_entropy_detection() -> None:
@@ -29,3 +32,11 @@ def test_regex_jwt_detection() -> None:
     line = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc12345xyz98765.def12345xyz98765"
     findings = analyze_line("app.py", 40, line, entropy_threshold=4.5)
     assert any(f.secret_type == "jwt_token" for f in findings)
+
+
+def test_entropy_heuristics_raise_severity_for_likely_token() -> None:
+    line = "data = 0123456789abcdef0123456789abcdef"
+    findings = analyze_line("a.py", 1, line, entropy_threshold=3.0)
+    entropy_findings = [f for f in findings if f.detector == "entropy"]
+    assert entropy_findings
+    assert entropy_findings[0].severity == "high"
