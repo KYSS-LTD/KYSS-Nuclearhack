@@ -30,6 +30,26 @@ PATTERNS: tuple[SecretPattern, ...] = (
         severity="high",
     ),
     SecretPattern(
+        name="stripe_api_key",
+        pattern=re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
+        severity="critical",
+    ),
+    SecretPattern(
+        name="google_api_key",
+        pattern=re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b"),
+        severity="high",
+    ),
+    SecretPattern(
+        name="jwt_token",
+        pattern=re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+        severity="high",
+    ),
+    SecretPattern(
+        name="oauth_bearer",
+        pattern=re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{20,}"),
+        severity="high",
+    ),
+    SecretPattern(
         name="private_key_header",
         pattern=re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
         severity="critical",

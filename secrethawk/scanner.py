@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import fnmatch
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from .analyzer import analyze_line
 from .models import Finding
@@ -42,6 +44,25 @@ TEXT_EXTENSIONS = {
 }
 
 
+ProgressCallback = Callable[[int, int, Path], None]
+
+
+def load_ignore_patterns(root: Path, filename: str = ".nuclearignore") -> list[str]:
+    path = root / filename
+    if not path.exists() or not path.is_file():
+        return []
+
+    patterns: list[str] = []
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if line and not line.startswith("#"):
+                patterns.append(line.rstrip("/"))
+    except OSError:
+        return []
+    return patterns
+
+
 def is_probably_text(file_path: Path) -> bool:
     if file_path.suffix.lower() in TEXT_EXTENSIONS:
         return True
@@ -52,19 +73,43 @@ def is_probably_text(file_path: Path) -> bool:
     return b"\x00" not in chunk
 
 
-def iter_files(root: Path, ignore_dirs: set[str]) -> list[Path]:
+def _matches_ignore(path: Path, root: Path, ignore_dirs: set[str], ignore_patterns: list[str]) -> bool:
+    if any(part in ignore_dirs for part in path.parts):
+        return True
+
+    rel_posix = path.relative_to(root).as_posix()
+    for pattern in ignore_patterns:
+        normalized = pattern.lstrip("./")
+        if "/" not in normalized:
+            if normalized in path.parts:
+                return True
+        if fnmatch.fnmatch(rel_posix, normalized) or fnmatch.fnmatch(path.name, normalized):
+            return True
+    return False
+
+
+def iter_files(root: Path, ignore_dirs: set[str], ignore_patterns: list[str] | None = None) -> list[Path]:
+    patterns = ignore_patterns or []
     files: list[Path] = []
     for path in root.rglob("*"):
-        if any(part in ignore_dirs for part in path.parts):
+        if _matches_ignore(path, root, ignore_dirs, patterns):
             continue
         if path.is_file() and is_probably_text(path):
             files.append(path)
     return files
 
 
-def scan_files(paths: list[Path], base_root: Path, entropy_threshold: float) -> list[Finding]:
+def scan_files(
+    paths: list[Path],
+    base_root: Path,
+    entropy_threshold: float,
+    progress_callback: ProgressCallback | None = None,
+) -> list[Finding]:
     findings: list[Finding] = []
-    for file_path in paths:
+    total = len(paths)
+    for index, file_path in enumerate(paths, start=1):
+        if progress_callback:
+            progress_callback(index, total, file_path)
         try:
             with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
                 for line_number, line in enumerate(handle, start=1):

@@ -57,7 +57,26 @@ secrethawk [path] [OPTIONS]
 - `--scan-history` — анализировать Git-историю через `git show`.
 - `--max-commits` — ограничить число коммитов при `--scan-history`.
 - `--fail-on [critical|high|medium|never]` — условие кода возврата.
+- `--config` — путь к TOML-конфигу (по умолчанию `nuclear.toml`).
+- `--no-color` — отключить ANSI-цвета severity в таблице.
+- `--no-progress` — отключить индикатор прогресса сканирования.
 - `--telegram-bot-token`, `--telegram-chat-id` — отправить краткое уведомление в Telegram по high/critical находкам.
+
+
+## Конфигурация проекта
+
+Поддерживается файл `nuclear.toml` (секция `[secrethawk]`):
+
+```toml
+[secrethawk]
+entropy_threshold = 4.5
+fail_on = "high"
+max_commits = 200
+exclude_dirs = ["generated", "tmp"]
+ignore_patterns = ["docs/examples/*", "*.snap"]
+```
+
+Дополнительно можно создать `.nuclearignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
 
 ## Что именно умеет находить
 
