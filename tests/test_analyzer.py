@@ -1,4 +1,6 @@
 from secrethawk.analyzer import analyze_line, shannon_entropy
+from secrethawk.patterns import SecretPattern
+import re
 
 
 def test_entropy_non_zero_for_mixed_token() -> None:
@@ -40,3 +42,21 @@ def test_entropy_heuristics_raise_severity_for_likely_token() -> None:
     entropy_findings = [f for f in findings if f.detector == "entropy"]
     assert entropy_findings
     assert entropy_findings[0].severity == "high"
+
+
+def test_custom_regex_detection() -> None:
+    custom = (
+        SecretPattern(
+            name="internal_token",
+            pattern=re.compile(r"INT_[A-Za-z0-9]{10}"),
+            severity="medium",
+        ),
+    )
+    findings = analyze_line(
+        "a.py",
+        3,
+        "token = INT_A1B2C3D4E5",
+        entropy_threshold=4.5,
+        extra_patterns=custom,
+    )
+    assert any(f.secret_type == "internal_token" for f in findings)

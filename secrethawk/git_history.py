@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .analyzer import analyze_line
 from .models import Finding
+from .patterns import SecretPattern
 
 
 def _decode_output(output: str | bytes | None) -> str:
@@ -38,7 +39,12 @@ def list_commits(repo_root: Path, limit: int | None = None) -> list[str]:
     return [line.strip() for line in stdout.splitlines() if line.strip()]
 
 
-def scan_git_history(repo_root: Path, entropy_threshold: float, max_commits: int | None = None) -> list[Finding]:
+def scan_git_history(
+    repo_root: Path,
+    entropy_threshold: float,
+    max_commits: int | None = None,
+    extra_patterns: tuple[SecretPattern, ...] = (),
+) -> list[Finding]:
     findings: list[Finding] = []
     for commit in list_commits(repo_root, max_commits):
         show = _run_git(
@@ -69,6 +75,7 @@ def scan_git_history(repo_root: Path, entropy_threshold: float, max_commits: int
                     line_number=max(new_line_no, 1),
                     line=code_line,
                     entropy_threshold=entropy_threshold,
+                    extra_patterns=extra_patterns,
                 )
                 findings.extend(found)
                 new_line_no += 1

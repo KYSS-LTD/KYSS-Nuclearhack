@@ -102,6 +102,8 @@ secrethawk-web
 - Settings: настройка scanner-конфига, Jira, локальной LLM (сохранение в `nuclear.toml`).
 - Notifications: Telegram-настройки и тестовое уведомление.
 - Export: JSON/HTML/SARIF выгрузка отчётов.
+- Quick analysis: анализ вставленного текста/кода прямо из Dashboard (без запуска полного скана).
+- Custom regex: в Settings можно добавить свои regex-правила (`name|severity|regex`) для web-анализа и web-сканирования.
 
 Web-часть полностью локальная, внешние интеграции (Ollama/Jira/Telegram) опциональны.
 
@@ -147,7 +149,7 @@ exclude_dirs = ["generated", "tmp"]
 ignore_patterns = ["docs/examples/*", "*.snap"]
 ```
 
-Дополнительно можно создать `.nuclearignore` или `.secretignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
+Дополнительно можно создать `.nuclearignore`, `.secretignore` или `.sechawkignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
 
 ## Что именно умеет находить
 

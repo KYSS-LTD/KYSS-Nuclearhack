@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
-import subprocess
-import tempfile
 import threading
 from collections import Counter
 from datetime import datetime, timezone
@@ -17,8 +16,12 @@ from urllib import error, request
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
+from .analyzer import analyze_line
 from .local_llm import explain_finding_with_ollama
-from .models import Finding
+from .models import Finding, ScanReport
+from .patterns import SecretPattern
+from .scanner import DEFAULT_IGNORES, iter_files, load_ignore_patterns, scan_files
+from .git_history import scan_git_history
 
 DB_PATH = Path(".secrethawk-web.db")
 AUTO_IMPORT_GLOBS = [
@@ -274,39 +277,27 @@ def _top_files_data(rows: list[sqlite3.Row]) -> str:
     return f"<ul>{items}</ul>"
 
 
-def _run_scan_async(run_id: int, repo_path: str, entropy_threshold: float, scan_history: bool, max_commits: int | None) -> None:
-    json_path = Path(tempfile.gettempdir()) / f"secrethawk-web-{run_id}.json"
-    cmd = [
-        "secrethawk",
-        repo_path,
-        "--json-out",
-        str(json_path),
-        "--entropy-threshold",
-        str(entropy_threshold),
-        "--no-color",
-        "--no-progress",
-    ]
-    if scan_history:
-        cmd.append("--scan-history")
-    if max_commits:
-        cmd.extend(["--max-commits", str(max_commits)])
+def _build_custom_patterns(raw_patterns: list[dict[str, str]] | None) -> tuple[SecretPattern, ...]:
+    if not raw_patterns:
+        return ()
+    patterns: list[SecretPattern] = []
+    for item in raw_patterns:
+        name = str(item.get("name", "")).strip()
+        severity = str(item.get("severity", "medium")).strip().lower()
+        regex = str(item.get("regex", "")).strip()
+        if not name or not regex or severity not in {"critical", "high", "medium", "low"}:
+            continue
+        try:
+            compiled = re.compile(regex)
+        except re.error:
+            continue
+        patterns.append(SecretPattern(name=name, pattern=compiled, severity=severity))
+    return tuple(patterns)
 
-    with get_conn() as conn:
-        conn.execute("UPDATE scan_runs SET status='running', status_message=? WHERE id=?", ("Scanning...", run_id))
 
-    process = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if process.returncode not in (0, 2) or not json_path.exists():
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE scan_runs SET status='failed', finished_at=?, status_message=? WHERE id=?",
-                (now_iso(), process.stderr[-4000:], run_id),
-            )
-        return
-
-    report_data = json.loads(json_path.read_text(encoding="utf-8"))
+def _save_report_to_run(run_id: int, report_data: dict[str, Any], status_message: str = "Completed") -> None:
     findings = report_data.get("findings", [])
     summary = report_data.get("summary") or {}
-
     with get_conn() as conn:
         conn.execute(
             """
@@ -316,7 +307,7 @@ def _run_scan_async(run_id: int, repo_path: str, entropy_threshold: float, scan_
             """,
             (
                 now_iso(),
-                "Completed",
+                status_message,
                 len(findings),
                 len({f.get("file_path") for f in findings}),
                 len({f.get("file_path") for f in findings if "@" in str(f.get("file_path", ""))}),
@@ -350,6 +341,52 @@ def _run_scan_async(run_id: int, repo_path: str, entropy_threshold: float, scan_
                     json.dumps(finding.get("remediation", []), ensure_ascii=False),
                     commit_hash,
                 ),
+            )
+
+
+def _run_scan_async(run_id: int, repo_path: str, entropy_threshold: float, scan_history: bool, max_commits: int | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE scan_runs SET status='running', status_message=? WHERE id=?", ("Scanning...", run_id))
+
+    root = Path(repo_path).resolve()
+    if not root.exists() or not root.is_dir():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE scan_runs SET status='failed', finished_at=?, status_message=? WHERE id=?",
+                (now_iso(), f"Repository path does not exist: {root}", run_id),
+            )
+        return
+    scanner_cfg = load_setting("scanner", {"exclude_dirs": [], "ignore_patterns": [], "custom_regex": []})
+    custom_patterns = _build_custom_patterns(scanner_cfg.get("custom_regex", []))
+    exclude_dirs = set(DEFAULT_IGNORES)
+    exclude_dirs.update(scanner_cfg.get("exclude_dirs", []))
+    ignore_patterns = load_ignore_patterns(root)
+    ignore_patterns.extend(scanner_cfg.get("ignore_patterns", []))
+
+    try:
+        files = iter_files(root, ignore_dirs=exclude_dirs, ignore_patterns=ignore_patterns)
+        findings = scan_files(
+            files,
+            base_root=root,
+            entropy_threshold=entropy_threshold,
+            extra_patterns=custom_patterns,
+        )
+        if scan_history:
+            findings.extend(
+                scan_git_history(
+                    root,
+                    entropy_threshold=entropy_threshold,
+                    max_commits=max_commits,
+                    extra_patterns=custom_patterns,
+                )
+            )
+        report = ScanReport.create(repository=str(root), findings=findings)
+        _save_report_to_run(run_id, report.to_dict(), status_message="Completed (web analysis)")
+    except Exception as exc:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE scan_runs SET status='failed', finished_at=?, status_message=? WHERE id=?",
+                (now_iso(), str(exc)[:4000], run_id),
             )
 
 
@@ -396,6 +433,11 @@ def dashboard() -> str:
             <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
             <button type='submit'>Sync reports from disk</button>
           </form>
+          <h3>Quick analysis (paste code)</h3>
+          <form method='post' action='/api/analyze/text'>
+            <textarea name='content' rows='8' placeholder='Paste code or config text'></textarea>
+            <button type='submit'>Analyze text</button>
+          </form>
         """
         return _layout("Dashboard", body)
 
@@ -433,6 +475,11 @@ def dashboard() -> str:
       <form method='post' action='/api/reports/sync'>
         <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
         <button type='submit'>Sync reports from disk</button>
+      </form>
+      <h3>Quick analysis (paste code)</h3>
+      <form method='post' action='/api/analyze/text'>
+        <textarea name='content' rows='8' placeholder='Paste code or config text'></textarea>
+        <button type='submit'>Analyze text</button>
       </form>
     """
     return _layout("Dashboard", body)
@@ -620,10 +667,11 @@ def _append_ignore_rules(rows: list[sqlite3.Row]) -> None:
         if not run:
             continue
         repo = Path(run["repo_path"])
-        target = repo / ".secretignore"
-        existing = target.read_text(encoding="utf-8").splitlines() if target.exists() else []
-        merged = sorted(set(existing + patterns))
-        target.write_text("\n".join(merged) + "\n", encoding="utf-8")
+        for ignore_name in (".secretignore", ".sechawkignore"):
+            target = repo / ignore_name
+            existing = target.read_text(encoding="utf-8").splitlines() if target.exists() else []
+            merged = sorted(set(existing + patterns))
+            target.write_text("\n".join(merged) + "\n", encoding="utf-8")
 
 
 def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_type: str, priority: str, assignee: str | None) -> None:
@@ -686,6 +734,38 @@ def sync_reports(base_dir: str = Form(default=".")) -> Response:
     if imported == 0 and _scan_count() == 0:
         return Response(status_code=303, headers={"Location": "/"})
     return Response(status_code=303, headers={"Location": "/scans"})
+
+
+@app.post("/api/analyze/text", response_class=HTMLResponse)
+def analyze_text(content: str = Form(...), entropy_threshold: float = Form(default=4.5)) -> str:
+    scanner_cfg = load_setting("scanner", {"custom_regex": []})
+    custom_patterns = _build_custom_patterns(scanner_cfg.get("custom_regex", []))
+    findings: list[Finding] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        findings.extend(
+            analyze_line(
+                file_path="<pasted_text>",
+                line_number=line_number,
+                line=line,
+                entropy_threshold=entropy_threshold,
+                extra_patterns=custom_patterns,
+            )
+        )
+
+    rows = "".join(
+        f"<tr><td>{escape(f.severity)}</td><td>{escape(f.secret_type)}</td><td>{escape(f.detector)}</td><td>{f.line_number}</td><td><code>{escape(f.snippet)}</code></td></tr>"
+        for f in findings
+    )
+    body = f"""
+      <h1>Quick analysis result</h1>
+      <p>Findings: <b>{len(findings)}</b></p>
+      <p><a href='/'>Back to dashboard</a></p>
+      <table>
+        <tr><th>Severity</th><th>Type</th><th>Detector</th><th>Line</th><th>Snippet</th></tr>
+        {rows}
+      </table>
+    """
+    return _layout("Quick analysis", body)
 
 
 @app.post("/api/scan/start")
@@ -789,9 +869,17 @@ def git_history_leaks() -> str:
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page() -> str:
-    scanner = load_setting("scanner", {"entropy_threshold": 4.5, "fail_on": "high", "exclude_dirs": [], "ignore_patterns": []})
+    scanner = load_setting(
+        "scanner",
+        {"entropy_threshold": 4.5, "fail_on": "high", "exclude_dirs": [], "ignore_patterns": [], "custom_regex": []},
+    )
     jira = load_setting("jira", {"url": "", "email": "", "api_token": "", "default_project": ""})
     llm = load_setting("llm", {"enabled": False, "model": "llama3.2:3b", "endpoint": "http://127.0.0.1:11434/api/generate"})
+    custom_regex_text = "\n".join(
+        f"{item.get('name','')}|{item.get('severity','medium')}|{item.get('regex','')}"
+        for item in scanner.get("custom_regex", [])
+        if isinstance(item, dict)
+    )
     body = f"""
       <h1>Settings</h1>
       <form method='post' action='/settings'>
@@ -800,6 +888,8 @@ def settings_page() -> str:
         <label>Fail on</label><input name='fail_on' value='{escape(scanner.get('fail_on', 'high'))}' />
         <label>Excluded directories (comma separated)</label><input name='exclude_dirs' value='{escape(','.join(scanner.get('exclude_dirs', [])))}' />
         <label>Ignore patterns (comma separated)</label><input name='ignore_patterns' value='{escape(','.join(scanner.get('ignore_patterns', [])))}' />
+        <label>Custom regex rules (one per line: name|severity|regex)</label>
+        <textarea name='custom_regex' rows='7' placeholder='example: my_token|high|MYTOK_[A-Za-z0-9]{20,}'>{escape(custom_regex_text)}</textarea>
 
         <h3>Jira</h3>
         <label>URL</label><input name='jira_url' value='{escape(jira.get('url', ''))}' />
@@ -823,6 +913,7 @@ def save_settings(
     fail_on: str = Form(...),
     exclude_dirs: str = Form(default=""),
     ignore_patterns: str = Form(default=""),
+    custom_regex: str = Form(default=""),
     jira_url: str = Form(default=""),
     jira_email: str = Form(default=""),
     jira_api_token: str = Form(default=""),
@@ -831,11 +922,23 @@ def save_settings(
     llm_model: str = Form(default="llama3.2:3b"),
     llm_endpoint: str = Form(default="http://127.0.0.1:11434/api/generate"),
 ) -> Response:
+    custom_regex_rules: list[dict[str, str]] = []
+    for raw in custom_regex.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split("|", 2)]
+        if len(parts) != 3:
+            continue
+        name, severity, regex = parts
+        custom_regex_rules.append({"name": name, "severity": severity.lower(), "regex": regex})
+
     scanner_cfg = {
         "entropy_threshold": entropy_threshold,
         "fail_on": fail_on,
         "exclude_dirs": [item.strip() for item in exclude_dirs.split(",") if item.strip()],
         "ignore_patterns": [item.strip() for item in ignore_patterns.split(",") if item.strip()],
+        "custom_regex": custom_regex_rules,
     }
     save_setting("scanner", scanner_cfg)
     save_setting(
@@ -868,6 +971,7 @@ def save_settings(
     ignore_rules = scanner_cfg["ignore_patterns"]
     if ignore_rules:
         Path(".nuclearignore").write_text("\n".join(ignore_rules) + "\n", encoding="utf-8")
+        Path(".sechawkignore").write_text("\n".join(ignore_rules) + "\n", encoding="utf-8")
 
     return Response(status_code=303, headers={"Location": "/settings"})
 

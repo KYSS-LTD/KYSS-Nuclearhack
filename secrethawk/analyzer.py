@@ -7,7 +7,7 @@ import re
 
 from .guidance import enrich_with_guidance
 from .models import Finding
-from .patterns import PATTERNS
+from .patterns import PATTERNS, SecretPattern
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9+/=_\-]{20,}")
@@ -55,10 +55,16 @@ def _entropy_score(token: str) -> int:
     return score
 
 
-def analyze_line(file_path: str, line_number: int, line: str, entropy_threshold: float) -> list[Finding]:
+def analyze_line(
+    file_path: str,
+    line_number: int,
+    line: str,
+    entropy_threshold: float,
+    extra_patterns: tuple[SecretPattern, ...] = (),
+) -> list[Finding]:
     findings: list[Finding] = []
 
-    for secret_pattern in PATTERNS:
+    for secret_pattern in (*PATTERNS, *extra_patterns):
         match = secret_pattern.pattern.search(line)
         if match:
             findings.append(
