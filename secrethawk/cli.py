@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ SEVERITY_COLORS = {
     "low": "",
 }
 RESET = "\033[0m"
+MASK_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_./+\-=]{16,}")
 
 
 def _colorize(text: str, severity: str, enabled: bool) -> str:
@@ -38,19 +40,20 @@ def _colorize(text: str, severity: str, enabled: bool) -> str:
 
 
 def mask_sensitive_text(snippet: str) -> str:
-    tokens = snippet.split()
-    if not tokens:
-        return snippet
+    def _looks_sensitive(candidate: str) -> bool:
+        if len(candidate) < 16:
+            return False
+        if candidate.isalpha():
+            return False
+        return True
 
-    masked_tokens: list[str] = []
-    for token in tokens:
-        clean = token.strip("'\"`=,:;()[]{}")
-        if len(clean) < 12:
-            masked_tokens.append(token)
-            continue
-        masked = f"{clean[:4]}**{clean[-4:]}"
-        masked_tokens.append(token.replace(clean, masked, 1))
-    return " ".join(masked_tokens)
+    def _replace(match: re.Match[str]) -> str:
+        candidate = match.group(0)
+        if not _looks_sensitive(candidate):
+            return candidate
+        return f"{candidate[:4]}**{candidate[-4:]}"
+
+    return MASK_CANDIDATE_RE.sub(_replace, snippet)
 
 
 def render_guidance_summary(report: ScanReport) -> str:
@@ -72,6 +75,8 @@ def render_table(report: ScanReport, use_color: bool = True, explain_mode: str =
     lines.append("-" * 120)
     lines.append(f"{'Severity':<10} {'Detector':<8} {'Type':<24} {'Location':<45} Details")
     lines.append("-" * 120)
+    mode = explain_mode if explain_mode in {"summary", "each", "none"} else "summary"
+
     for finding in report.findings:
         location = f"{finding.file_path}:{finding.line_number}"
         severity = _colorize(f"{finding.severity:<10}", finding.severity, use_color)
@@ -80,11 +85,11 @@ def render_table(report: ScanReport, use_color: bool = True, explain_mode: str =
             f"{mask_sensitive_text(finding.snippet)}"
         )
 
-        if explain_mode == "each":
+        if mode == "each":
             fix_summary = "; ".join(finding.remediation[:2])
             lines.append(f"{'':<10} {'':<8} {'':<24} {'':<45} Hint: {finding.explanation} | Fix: {fix_summary}")
 
-    if explain_mode == "summary" and report.findings:
+    if mode == "summary" and report.findings:
         lines.append("-" * 120)
         lines.append(render_guidance_summary(report))
 

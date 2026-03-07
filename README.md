@@ -43,6 +43,40 @@ secrethawk . --only-staged --fail-on high
 secrethawk . --scan-history --max-commits 200 --fail-on high
 ```
 
+Показывать только одно резюме Why/Fix в конце (поведение по умолчанию):
+
+```bash
+secrethawk . --explain summary
+```
+
+Показывать пояснения у каждой находки:
+
+```bash
+secrethawk . --explain each
+```
+
+## Telegram: как запустить с ботом
+
+1. Создайте бота через `@BotFather` и получите token.
+2. Добавьте бота в нужный чат/группу и узнайте `chat_id`.
+3. Один раз сохраните данные в SecretHawk:
+
+```bash
+secrethawk . --token <BOT_TOKEN> --id <CHAT_ID>
+```
+
+4. Дальше для отправки сводки достаточно:
+
+```bash
+secrethawk . --tg
+```
+
+5. Если нужна AI-сводка в Telegram (локальная LLM/Ollama):
+
+```bash
+secrethawk . --tg --ai --llm-model llama3.2:3b
+```
+
 ## Полный справочник по CLI
 
 ```bash

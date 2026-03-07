@@ -8,11 +8,17 @@ from secrethawk.scanner import iter_files, load_ignore_patterns
 def test_mask_sensitive_text_masks_long_values() -> None:
     source = "token=abcdefghijklmnopqrstuvwxyz123456"
     masked = mask_sensitive_text(source)
-    assert masked.startswith("toke")
+    assert "toke**3456" in masked
     assert "3456" in masked
     assert "**" in masked
     assert "***" not in masked
     assert "abcdefghijklmnopqrstuvwxyz123456" not in masked
+
+
+def test_mask_sensitive_text_does_not_mask_long_plain_words() -> None:
+    source = 'line = "Authorization Bearer"'
+    masked = mask_sensitive_text(source)
+    assert masked == source
 
 
 def test_render_table_prints_hint_on_next_line_with_each_mode() -> None:
