@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -47,11 +48,9 @@ TEXT_EXTENSIONS = {
 ProgressCallback = Callable[[int, int, Path], None]
 
 
-def load_ignore_patterns(root: Path, filename: str = ".nuclearignore") -> list[str]:
-    path = root / filename
+def _read_ignore_file(path: Path) -> list[str]:
     if not path.exists() or not path.is_file():
         return []
-
     patterns: list[str] = []
     try:
         for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -60,6 +59,13 @@ def load_ignore_patterns(root: Path, filename: str = ".nuclearignore") -> list[s
                 patterns.append(line.rstrip("/"))
     except OSError:
         return []
+    return patterns
+
+
+def load_ignore_patterns(root: Path, filename: str = ".nuclearignore") -> list[str]:
+    patterns = _read_ignore_file(root / filename)
+    for alias in (".secretignore",):
+        patterns.extend(_read_ignore_file(root / alias))
     return patterns
 
 
@@ -107,13 +113,13 @@ def scan_files(
 ) -> list[Finding]:
     findings: list[Finding] = []
     total = len(paths)
-    for index, file_path in enumerate(paths, start=1):
-        if progress_callback:
-            progress_callback(index, total, file_path)
+
+    def _scan_single(file_path: Path) -> list[Finding]:
+        local_findings: list[Finding] = []
         try:
             with file_path.open("r", encoding="utf-8", errors="ignore") as handle:
                 for line_number, line in enumerate(handle, start=1):
-                    findings.extend(
+                    local_findings.extend(
                         analyze_line(
                             file_path=str(file_path.relative_to(base_root)),
                             line_number=line_number,
@@ -122,7 +128,16 @@ def scan_files(
                         )
                     )
         except OSError:
-            continue
+            return []
+        return local_findings
+
+    with ThreadPoolExecutor() as executor:
+        for index, file_findings in enumerate(executor.map(_scan_single, paths), start=1):
+            file_path = paths[index - 1]
+            findings.extend(file_findings)
+            if progress_callback:
+                progress_callback(index, total, file_path)
+
     return findings
 
 

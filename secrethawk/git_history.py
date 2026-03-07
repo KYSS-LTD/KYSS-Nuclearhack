@@ -9,32 +9,49 @@ from .analyzer import analyze_line
 from .models import Finding
 
 
+def _decode_output(output: str | bytes | None) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output
+
+
+def _run_git(cmd: list[str], repo_root: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        cwd=repo_root,
+        capture_output=True,
+        text=False,
+        check=False,
+    )
+
+
 def list_commits(repo_root: Path, limit: int | None = None) -> list[str]:
     cmd = ["git", "rev-list", "--all"]
     if limit:
         cmd.extend(["--max-count", str(limit)])
-    result = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+    result = _run_git(cmd, repo_root)
     if result.returncode != 0:
         return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    stdout = _decode_output(result.stdout)
+    return [line.strip() for line in stdout.splitlines() if line.strip()]
 
 
 def scan_git_history(repo_root: Path, entropy_threshold: float, max_commits: int | None = None) -> list[Finding]:
     findings: list[Finding] = []
     for commit in list_commits(repo_root, max_commits):
-        show = subprocess.run(
+        show = _run_git(
             ["git", "show", "--pretty=format:", "--unified=0", commit],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
+            repo_root,
         )
         if show.returncode != 0:
             continue
 
         current_file = "unknown"
         new_line_no = 0
-        for line in show.stdout.splitlines():
+        show_output = _decode_output(show.stdout)
+        for line in show_output.splitlines():
             if line.startswith("+++ b/"):
                 current_file = line.removeprefix("+++ b/")
             elif line.startswith("@@"):

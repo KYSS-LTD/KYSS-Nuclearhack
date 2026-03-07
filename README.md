@@ -9,6 +9,8 @@
 - Анализ по **regex-паттернам** (AWS/GitHub/Slack/private key/password/API token).
 - Анализ по **энтропии Шеннона** для неизвестных токенов.
 - Классификация находок по критичности (`critical`, `high`, `medium`, `low`).
+- Пояснения риска и рекомендации по исправлению для каждой находки.
+- Опциональное обогащение находок через полностью локальную LLM (Ollama API).
 - Отчёт в консольной таблице и JSON.
 - Интеграция с Git через pre-commit hook.
 - Интеграция с GitHub Actions.
@@ -41,6 +43,44 @@ secrethawk . --only-staged --fail-on high
 secrethawk . --scan-history --max-commits 200 --fail-on high
 ```
 
+Показывать только одно резюме Why/Fix в конце (поведение по умолчанию):
+
+```bash
+secrethawk . --explain summary
+```
+
+Показывать пояснения у каждой находки:
+
+```bash
+secrethawk . --explain each
+```
+
+## Telegram: как запустить с ботом
+
+1. Создайте бота через `@BotFather` и получите token.
+2. Добавьте бота в нужный чат/группу и узнайте `chat_id`.
+3. Один раз сохраните данные в SecretHawk:
+
+```bash
+secrethawk . --token <BOT_TOKEN> --id <CHAT_ID>
+```
+
+4. Дальше для отправки сводки достаточно:
+
+```bash
+secrethawk . --tg
+```
+
+Что приходит в Telegram:
+- красивое сообщение со сводкой `high/critical` и датой сканирования;
+- автоматически прикреплённые готовые файлы отчёта: `.txt`, `.json`, `.html`, `.csv`.
+
+5. Если нужна AI-сводка в Telegram (локальная LLM/Ollama):
+
+```bash
+secrethawk . --tg --ai --llm-model llama3.2:3b
+```
+
 ## Полный справочник по CLI
 
 ```bash
@@ -56,6 +96,13 @@ secrethawk [path] [OPTIONS]
 - `--only-staged` — сканировать только индексацию Git (`git diff --cached`).
 - `--scan-history` — анализировать Git-историю через `git show`.
 - `--max-commits` — ограничить число коммитов при `--scan-history`.
+- `--explain-with-llm` — дополнительно генерировать пояснения через локальную LLM.
+- `--explain [summary|each|none]` — вывод подсказок: одна сводка в конце (по умолчанию), у каждой находки, или отключить.
+- `--llm-model` — имя локальной модели Ollama (по умолчанию `llama3.2:3b`).
+- `--llm-endpoint` — локальный HTTP endpoint API генерации.
+- `--token`, `--id` — сохранить Telegram token/chat id для последующих запусков.
+- `--tg` — отправить сводку в Telegram, используя сохранённые (или переданные) token/id.
+- `--ai` — добавить к Telegram-сообщению AI-сводку (локальная LLM через Ollama).
 - `--fail-on [critical|high|medium|never]` — условие кода возврата.
 - `--config` — путь к TOML-конфигу (по умолчанию `nuclear.toml`).
 - `--no-color` — отключить ANSI-цвета severity в таблице.
@@ -76,7 +123,7 @@ exclude_dirs = ["generated", "tmp"]
 ignore_patterns = ["docs/examples/*", "*.snap"]
 ```
 
-Дополнительно можно создать `.nuclearignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
+Дополнительно можно создать `.nuclearignore` или `.secretignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
 
 ## Что именно умеет находить
 
@@ -93,6 +140,7 @@ ignore_patterns = ["docs/examples/*", "*.snap"]
 
 - Ищет последовательности длиной 20+ символов (`[A-Za-z0-9+/=_-]`) и считает энтропию Шеннона.
 - Если энтропия выше порога, помечает как `unknown_high_entropy` со значением энтропии в отчёте.
+- Дополнительные эвристики учитывают длину, формат (hex/base64) и типичные префиксы токенов.
 
 ## Выходные коды
 
