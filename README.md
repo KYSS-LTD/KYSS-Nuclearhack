@@ -81,6 +81,34 @@ secrethawk . --tg
 secrethawk . --tg --ai --llm-model llama3.2:3b
 ```
 
+
+## Web-интерфейс (локальный FastAPI)
+
+Запуск локального web-интерфейса:
+
+```bash
+secrethawk --web
+```
+
+После запуска откройте `http://127.0.0.1:8000`.
+
+> Windows note: if you get `WinError 32` for `secrethawk-web.exe` during upgrade, stop the running web UI process first and use `secrethawk --web` after upgrade.
+
+Основные разделы:
+- Dashboard: сводка последнего сканирования, запуск скана и загрузка JSON отчёта от CLI.
+- Если web-база пуста, Dashboard автоматически пытается импортировать существующие JSON-отчёты CLI (`secret-report.json`, `secrethawk*.json`), также доступна ручная синхронизация отчётов с диска.
+- Findings: таблица находок с фильтрацией, сортировкой, bulk-действиями (ignore/false-positive/Jira).
+- Finding details: детальная карточка, контекст, рекомендации и кнопка `Explain with AI` (Ollama).
+- Scan history: история всех запусков с сохранением в SQLite (`.secrethawk-web.db`).
+- Git History Leaks: отдельный просмотр утечек, найденных в истории Git.
+- Settings: настройка scanner-конфига, Jira, локальной LLM (сохранение в `nuclear.toml`).
+- Notifications: Telegram-настройки и тестовое уведомление.
+- Export: JSON/HTML/SARIF выгрузка отчётов.
+- Quick analysis: анализ вставленного текста/кода прямо из Dashboard (без запуска полного скана).
+- Custom regex: в Settings можно добавить свои regex-правила (`name|severity|regex`) для web-анализа и web-сканирования.
+
+Web-часть полностью локальная, внешние интеграции (Ollama/Jira/Telegram) опциональны.
+
 ## Полный справочник по CLI
 
 ```bash
@@ -123,7 +151,7 @@ exclude_dirs = ["generated", "tmp"]
 ignore_patterns = ["docs/examples/*", "*.snap"]
 ```
 
-Дополнительно можно создать `.nuclearignore` или `.secretignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
+Дополнительно можно создать `.nuclearignore`, `.secretignore` или `.sechawkignore` с путями/паттернами (по одному на строку), которые нужно исключить из обхода.
 
 ## Что именно умеет находить
 

@@ -120,6 +120,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--ai", action="store_true", help="Include local AI summary in Telegram message")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in table output")
     parser.add_argument("--no-progress", action="store_true", help="Disable file scanning progress indicator")
+    parser.add_argument("--web", action="store_true", help="Start local web UI instead of running scan")
+    parser.add_argument("--web-host", default="127.0.0.1", help="Web UI host")
+    parser.add_argument("--web-port", type=int, default=8000, help="Web UI port")
     parser.add_argument(
         "--fail-on",
         choices=["critical", "high", "medium", "never"],
@@ -151,6 +154,12 @@ def should_fail(report: ScanReport, fail_on: str) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+    if args.web:
+        from .webapp import run as run_webapp
+
+        run_webapp(host=args.web_host, port=args.web_port)
+        return 0
+
     root = Path(args.path).resolve()
     config = load_project_config(root, args.config)
 

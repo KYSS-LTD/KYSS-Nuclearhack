@@ -1,6 +1,8 @@
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
-from secrethawk.cli import mask_sensitive_text, render_table
+from secrethawk.cli import main, mask_sensitive_text, parse_args, render_table
 from secrethawk.models import Finding, ScanReport
 from secrethawk.scanner import iter_files, load_ignore_patterns
 
@@ -103,3 +105,37 @@ def test_secretignore_excludes_paths(tmp_path: Path) -> None:
     relative = {p.relative_to(tmp_path).as_posix() for p in files}
     assert "ok.txt" in relative
     assert "private/a.txt" not in relative
+
+
+def test_sechawkignore_excludes_paths(tmp_path: Path) -> None:
+    (tmp_path / ".sechawkignore").write_text("secret-dir/*\n", encoding="utf-8")
+    (tmp_path / "secret-dir").mkdir()
+    (tmp_path / "secret-dir" / "x.txt").write_text("AKIA1234567890ABCDEF", encoding="utf-8")
+    (tmp_path / "allowed.txt").write_text("ok", encoding="utf-8")
+
+    patterns = load_ignore_patterns(tmp_path)
+    files = iter_files(tmp_path, ignore_dirs=set(), ignore_patterns=patterns)
+    relative = {p.relative_to(tmp_path).as_posix() for p in files}
+    assert "allowed.txt" in relative
+    assert "secret-dir/x.txt" not in relative
+
+
+def test_parse_args_supports_web_mode() -> None:
+    args = parse_args(["--web", "--web-host", "0.0.0.0", "--web-port", "9000"])
+    assert args.web is True
+    assert args.web_host == "0.0.0.0"
+    assert args.web_port == 9000
+
+
+def test_main_runs_web_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_webapp(host: str = "127.0.0.1", port: int = 8000) -> None:
+        captured["host"] = host
+        captured["port"] = port
+
+    monkeypatch.setitem(sys.modules, "secrethawk.webapp", SimpleNamespace(run=fake_run_webapp))
+
+    code = main(["--web", "--web-host", "0.0.0.0", "--web-port", "9001"])
+    assert code == 0
+    assert captured == {"host": "0.0.0.0", "port": 9001}

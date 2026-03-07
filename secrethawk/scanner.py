@@ -10,6 +10,7 @@ from typing import Callable
 
 from .analyzer import analyze_line
 from .models import Finding
+from .patterns import SecretPattern
 
 DEFAULT_IGNORES = {
     ".git",
@@ -64,7 +65,7 @@ def _read_ignore_file(path: Path) -> list[str]:
 
 def load_ignore_patterns(root: Path, filename: str = ".nuclearignore") -> list[str]:
     patterns = _read_ignore_file(root / filename)
-    for alias in (".secretignore",):
+    for alias in (".secretignore", ".sechawkignore"):
         patterns.extend(_read_ignore_file(root / alias))
     return patterns
 
@@ -110,6 +111,7 @@ def scan_files(
     base_root: Path,
     entropy_threshold: float,
     progress_callback: ProgressCallback | None = None,
+    extra_patterns: tuple[SecretPattern, ...] = (),
 ) -> list[Finding]:
     findings: list[Finding] = []
     total = len(paths)
@@ -125,6 +127,7 @@ def scan_files(
                             line_number=line_number,
                             line=line,
                             entropy_threshold=entropy_threshold,
+                            extra_patterns=extra_patterns,
                         )
                     )
         except OSError:

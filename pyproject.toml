@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "CLI scanner for early secret leak detection"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9"]
 
 [project.scripts]
 secrethawk = "secrethawk.cli:main"
