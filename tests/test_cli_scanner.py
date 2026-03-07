@@ -15,7 +15,7 @@ def test_mask_sensitive_text_masks_long_values() -> None:
     assert "abcdefghijklmnopqrstuvwxyz123456" not in masked
 
 
-def test_render_table_prints_hint_on_next_line() -> None:
+def test_render_table_prints_hint_on_next_line_with_each_mode() -> None:
     report = ScanReport.create(
         repository=".",
         findings=[
@@ -32,11 +32,44 @@ def test_render_table_prints_hint_on_next_line() -> None:
         ],
     )
 
-    table = render_table(report, use_color=False)
+    table = render_table(report, use_color=False, explain_mode="each")
     lines = table.splitlines()
     finding_line_index = next(i for i, value in enumerate(lines) if "aws_access_key" in value)
     assert "| Why:" not in lines[finding_line_index]
     assert "Hint:" in lines[finding_line_index + 1]
+
+
+def test_render_table_prints_single_summary_by_default() -> None:
+    report = ScanReport.create(
+        repository=".",
+        findings=[
+            Finding(
+                file_path="app.py",
+                line_number=12,
+                detector="regex",
+                secret_type="aws_access_key",
+                severity="critical",
+                snippet="token=abcdefghijklmnopqrstuvwxyz123456",
+                explanation="Почему это проблема",
+                remediation=["Шаг 1", "Шаг 2"],
+            ),
+            Finding(
+                file_path="service.py",
+                line_number=5,
+                detector="regex",
+                secret_type="github_token",
+                severity="high",
+                snippet="token=ghp_abcdefghijklmnopqrstuvwxyz123456",
+                explanation="Тоже проблема",
+                remediation=["Сделать A"],
+            ),
+        ],
+    )
+
+    table = render_table(report, use_color=False)
+    assert table.count("Hint:") == 0
+    assert table.count("Why:") == 1
+    assert table.count("Fix:") == 1
 
 
 def test_nuclearignore_excludes_paths(tmp_path: Path) -> None:

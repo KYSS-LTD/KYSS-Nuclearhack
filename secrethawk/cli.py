@@ -53,7 +53,15 @@ def mask_sensitive_text(snippet: str) -> str:
     return " ".join(masked_tokens)
 
 
-def render_table(report: ScanReport, use_color: bool = True) -> str:
+def render_guidance_summary(report: ScanReport) -> str:
+    if not report.findings:
+        return ""
+    top = sorted(report.findings, key=lambda item: {"critical": 3, "high": 2, "medium": 1, "low": 0}.get(item.severity, 0), reverse=True)[0]
+    fix_summary = "; ".join(top.remediation[:2])
+    return f"Why: {top.explanation}\nFix: {fix_summary}"
+
+
+def render_table(report: ScanReport, use_color: bool = True, explain_mode: str = "summary") -> str:
     lines = []
     summary = report.by_severity()
     lines.append(
@@ -67,12 +75,19 @@ def render_table(report: ScanReport, use_color: bool = True) -> str:
     for finding in report.findings:
         location = f"{finding.file_path}:{finding.line_number}"
         severity = _colorize(f"{finding.severity:<10}", finding.severity, use_color)
-        fix_summary = "; ".join(finding.remediation[:2])
         lines.append(
             f"{severity} {finding.detector:<8} {finding.secret_type:<24} {location:<45} "
             f"{mask_sensitive_text(finding.snippet)}"
         )
-        lines.append(f"{'':<10} {'':<8} {'':<24} {'':<45} Hint: {finding.explanation} | Fix: {fix_summary}")
+
+        if explain_mode == "each":
+            fix_summary = "; ".join(finding.remediation[:2])
+            lines.append(f"{'':<10} {'':<8} {'':<24} {'':<45} Hint: {finding.explanation} | Fix: {fix_summary}")
+
+    if explain_mode == "summary" and report.findings:
+        lines.append("-" * 120)
+        lines.append(render_guidance_summary(report))
+
     return "\n".join(lines)
 
 
@@ -86,6 +101,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--scan-history", action="store_true", help="Scan git history")
     parser.add_argument("--max-commits", type=int, default=None, help="Max commits for history scan")
     parser.add_argument("--explain-with-llm", action="store_true", help="Enrich findings with local LLM")
+    parser.add_argument(
+        "--explain",
+        choices=["summary", "each", "none"],
+        default="summary",
+        help="How to show guidance in CLI output",
+    )
     parser.add_argument("--llm-model", default="llama3.2:3b", help="Local model name for Ollama")
     parser.add_argument("--llm-endpoint", default="http://127.0.0.1:11434/api/generate", help="Local LLM endpoint")
     parser.add_argument("--telegram-bot-token", "--token", dest="telegram_bot_token", default=None)
@@ -170,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         for finding in report.findings:
             explain_finding_with_ollama(finding, model=args.llm_model, endpoint=args.llm_endpoint)
 
-    print(render_table(report, use_color=not args.no_color))
+    print(render_table(report, use_color=not args.no_color, explain_mode=args.explain))
 
     if args.json_out:
         out_path = Path(args.json_out)

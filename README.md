@@ -59,6 +59,7 @@ secrethawk [path] [OPTIONS]
 - `--scan-history` — анализировать Git-историю через `git show`.
 - `--max-commits` — ограничить число коммитов при `--scan-history`.
 - `--explain-with-llm` — дополнительно генерировать пояснения через локальную LLM.
+- `--explain [summary|each|none]` — вывод подсказок: одна сводка в конце (по умолчанию), у каждой находки, или отключить.
 - `--llm-model` — имя локальной модели Ollama (по умолчанию `llama3.2:3b`).
 - `--llm-endpoint` — локальный HTTP endpoint API генерации.
 - `--token`, `--id` — сохранить Telegram token/chat id для последующих запусков.
