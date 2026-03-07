@@ -18,9 +18,14 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from .local_llm import explain_finding_with_ollama
-from .models import Finding, ScanReport
+from .models import Finding
 
 DB_PATH = Path(".secrethawk-web.db")
+AUTO_IMPORT_GLOBS = [
+    "**/secret-report.json",
+    "**/secrethawk*.json",
+    "**/*secret*report*.json",
+]
 
 
 def now_iso() -> str:
@@ -165,6 +170,51 @@ def ingest_report(report_data: dict[str, Any], source: str, repo_path: str) -> i
                 ),
             )
     return run_id
+
+
+def _is_secrethawk_report(data: dict[str, Any]) -> bool:
+    findings = data.get("findings")
+    return isinstance(findings, list) and "repository" in data
+
+
+def _scan_count() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS c FROM scan_runs").fetchone()
+    return int(row["c"] if row else 0)
+
+
+def _report_already_ingested(report_data: dict[str, Any]) -> bool:
+    report_payload = json.dumps(report_data, ensure_ascii=False, sort_keys=True)
+    with get_conn() as conn:
+        row = conn.execute("SELECT 1 FROM scan_runs WHERE report_json = ? LIMIT 1", (report_payload,)).fetchone()
+    return row is not None
+
+
+def _auto_import_reports_if_needed(base_dir: Path | None = None, force: bool = False) -> int:
+    if not force and _scan_count() > 0:
+        return 0
+
+    root = base_dir or Path.cwd()
+    imported = 0
+    seen_paths: set[Path] = set()
+
+    for pattern in AUTO_IMPORT_GLOBS:
+        for candidate in root.glob(pattern):
+            if candidate in seen_paths or not candidate.is_file():
+                continue
+            seen_paths.add(candidate)
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict) or not _is_secrethawk_report(data):
+                continue
+            if _report_already_ingested(data):
+                continue
+            repo_path = str(data.get("repository") or candidate.parent)
+            ingest_report(data, source="auto_import_json", repo_path=repo_path)
+            imported += 1
+    return imported
 
 
 def _layout(title: str, body: str) -> str:
@@ -313,16 +363,46 @@ def startup() -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard() -> str:
+    imported_count = _auto_import_reports_if_needed()
     with get_conn() as conn:
         run = conn.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
         rows = conn.execute("SELECT * FROM findings WHERE scan_run_id=?", (run["id"],)).fetchall() if run else []
 
+    status_note = ""
+    if imported_count:
+        status_note = f"<p class='card'>Авто-импортировано отчётов CLI: <b>{imported_count}</b>.</p>"
+
     if not run:
-        return _layout("Dashboard", "<h1>Dashboard</h1><p>Сканирования пока не запускались.</p>")
+        body = f"""
+          <h1>Dashboard</h1>
+          <p class='card'>Сканирования в web-базе не найдены. Вы можете запустить скан или загрузить JSON-отчёт CLI.</p>
+          {status_note}
+          <h3>Start scan</h3>
+          <form method='post' action='/api/scan/start'>
+            <label>Repository path</label><input name='repo_path' value='.' />
+            <label>Entropy threshold</label><input name='entropy_threshold' value='4.5' />
+            <label><input type='checkbox' name='scan_history' value='1' /> Scan git history</label>
+            <label>Max commits</label><input name='max_commits' value='200' />
+            <button type='submit'>Run scan</button>
+          </form>
+          <h3>Upload JSON report</h3>
+          <form method='post' enctype='multipart/form-data' action='/api/reports/upload'>
+            <input type='file' name='report_file' />
+            <input type='text' name='repo_path' placeholder='repo path' value='.' />
+            <button type='submit'>Upload</button>
+          </form>
+          <h3>Sync existing CLI reports</h3>
+          <form method='post' action='/api/reports/sync'>
+            <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
+            <button type='submit'>Sync reports from disk</button>
+          </form>
+        """
+        return _layout("Dashboard", body)
 
     summary = json.loads(run["summary_json"] or "{}")
     body = f"""
       <h1>Dashboard</h1>
+      {status_note}
       <div class='grid'>
         <div class='card'><b>Total findings</b><div>{run['total_findings']}</div></div>
         <div class='card'><b>Critical/High</b><div>{summary.get('critical',0)}/{summary.get('high',0)}</div></div>
@@ -348,6 +428,11 @@ def dashboard() -> str:
         <input type='file' name='report_file' />
         <input type='text' name='repo_path' placeholder='repo path' />
         <button type='submit'>Upload</button>
+      </form>
+      <h3>Sync existing CLI reports</h3>
+      <form method='post' action='/api/reports/sync'>
+        <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
+        <button type='submit'>Sync reports from disk</button>
       </form>
     """
     return _layout("Dashboard", body)
@@ -593,6 +678,14 @@ async def upload_report(report_file: UploadFile = File(...), repo_path: str = Fo
     payload = json.loads((await report_file.read()).decode("utf-8"))
     run_id = ingest_report(payload, source="uploaded_json", repo_path=repo_path)
     return Response(status_code=303, headers={"Location": f"/scans/{run_id}"})
+
+
+@app.post("/api/reports/sync")
+def sync_reports(base_dir: str = Form(default=".")) -> Response:
+    imported = _auto_import_reports_if_needed(Path(base_dir).resolve(), force=True)
+    if imported == 0 and _scan_count() == 0:
+        return Response(status_code=303, headers={"Location": "/"})
+    return Response(status_code=303, headers={"Location": "/scans"})
 
 
 @app.post("/api/scan/start")

@@ -94,6 +94,7 @@ secrethawk-web
 
 Основные разделы:
 - Dashboard: сводка последнего сканирования, запуск скана и загрузка JSON отчёта от CLI.
+- Если web-база пуста, Dashboard автоматически пытается импортировать существующие JSON-отчёты CLI (`secret-report.json`, `secrethawk*.json`), также доступна ручная синхронизация отчётов с диска.
 - Findings: таблица находок с фильтрацией, сортировкой, bulk-действиями (ignore/false-positive/Jira).
 - Finding details: детальная карточка, контекст, рекомендации и кнопка `Explain with AI` (Ollama).
 - Scan history: история всех запусков с сохранением в SQLite (`.secrethawk-web.db`).
