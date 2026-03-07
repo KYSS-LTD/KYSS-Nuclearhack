@@ -722,9 +722,18 @@ def _append_ignore_rules(rows: list[sqlite3.Row]) -> None:
             target.write_text("\n".join(merged) + "\n", encoding="utf-8")
 
 
+def _normalize_jira_url(raw_url: str) -> str:
+    url = raw_url.strip()
+    if not url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url.rstrip("/")
+
+
 def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_type: str, priority: str, assignee: str | None) -> None:
     cfg = load_setting("jira", {"url": "", "email": "", "api_token": "", "default_project": ""})
-    jira_url = cfg.get("url", "").rstrip("/")
+    jira_url = _normalize_jira_url(str(cfg.get("url", "")))
     key = project_key or cfg.get("default_project")
     if not jira_url or not key:
         return
@@ -753,16 +762,16 @@ def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_
         auth = f"{cfg.get('email')}:{cfg.get('api_token')}".encode("utf-8")
         import base64
 
-        req = request.Request(
-            f"{jira_url}/rest/api/2/issue",
-            data=json.dumps(payload).encode("utf-8"),
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Basic {base64.b64encode(auth).decode('utf-8')}",
-            },
-        )
         try:
+            req = request.Request(
+                f"{jira_url}/rest/api/2/issue",
+                data=json.dumps(payload).encode("utf-8"),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Basic {base64.b64encode(auth).decode('utf-8')}",
+                },
+            )
             with request.urlopen(req, timeout=10):
                 pass
         except Exception:
@@ -940,7 +949,7 @@ def settings_page() -> str:
         <textarea name='custom_regex' rows='7' placeholder='example: my_token|high|MYTOK_[A-Za-z0-9]{20,}'>{escape(custom_regex_text)}</textarea>
 
         <h3>Jira</h3>
-        <label>URL</label><input name='jira_url' value='{escape(jira.get('url', ''))}' />
+        <label>URL (with or without https://)</label><input name='jira_url' value='{escape(jira.get('url', ''))}' placeholder='https://your-company.atlassian.net' />
         <label>Email</label><input name='jira_email' value='{escape(jira.get('email', ''))}' />
         <label>API token</label><input name='jira_api_token' value='{escape(jira.get('api_token', ''))}' />
         <label>Default project key</label><input name='jira_default_project' value='{escape(jira.get('default_project', ''))}' />
