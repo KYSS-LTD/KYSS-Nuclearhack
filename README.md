@@ -71,6 +71,10 @@ secrethawk . --token <BOT_TOKEN> --id <CHAT_ID>
 secrethawk . --tg
 ```
 
+Что приходит в Telegram:
+- красивое сообщение со сводкой `high/critical` и датой сканирования;
+- автоматически прикреплённые готовые файлы отчёта: `.txt`, `.json`, `.html`, `.csv`.
+
 5. Если нужна AI-сводка в Telegram (локальная LLM/Ollama):
 
 ```bash

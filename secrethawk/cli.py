@@ -224,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
             repo=root.name,
             findings=findings,
             ai_summary=ai_summary,
+            scanned_at=report.scanned_at,
         )
 
     return 2 if should_fail(report, fail_on) else 0
