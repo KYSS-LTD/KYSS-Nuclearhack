@@ -61,6 +61,9 @@ secrethawk [path] [OPTIONS]
 - `--explain-with-llm` — дополнительно генерировать пояснения через локальную LLM.
 - `--llm-model` — имя локальной модели Ollama (по умолчанию `llama3.2:3b`).
 - `--llm-endpoint` — локальный HTTP endpoint API генерации.
+- `--token`, `--id` — сохранить Telegram token/chat id для последующих запусков.
+- `--tg` — отправить сводку в Telegram, используя сохранённые (или переданные) token/id.
+- `--ai` — добавить к Telegram-сообщению AI-сводку (локальная LLM через Ollama).
 - `--fail-on [critical|high|medium|never]` — условие кода возврата.
 - `--config` — путь к TOML-конфигу (по умолчанию `nuclear.toml`).
 - `--no-color` — отключить ANSI-цвета severity в таблице.

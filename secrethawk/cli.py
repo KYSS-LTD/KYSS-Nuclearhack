@@ -13,10 +13,11 @@ else:
     tomllib = None
 
 from .git_history import scan_git_history
-from .local_llm import explain_finding_with_ollama
+from .local_llm import explain_finding_with_ollama, summarize_findings_with_ollama
 from .models import ScanReport
 from .notifier import send_telegram_alert
 from .scanner import DEFAULT_IGNORES, iter_files, list_staged_files, load_ignore_patterns, scan_files
+from .telegram_config import load_telegram_credentials, save_telegram_credentials
 
 SEVERITY_COLORS = {
     "critical": "\033[31m",  # red
@@ -87,8 +88,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--explain-with-llm", action="store_true", help="Enrich findings with local LLM")
     parser.add_argument("--llm-model", default="llama3.2:3b", help="Local model name for Ollama")
     parser.add_argument("--llm-endpoint", default="http://127.0.0.1:11434/api/generate", help="Local LLM endpoint")
-    parser.add_argument("--telegram-bot-token", default=None)
-    parser.add_argument("--telegram-chat-id", default=None)
+    parser.add_argument("--telegram-bot-token", "--token", dest="telegram_bot_token", default=None)
+    parser.add_argument("--telegram-chat-id", "--id", dest="telegram_chat_id", default=None)
+    parser.add_argument("--tg", action="store_true", help="Send Telegram summary using saved token/chat id")
+    parser.add_argument("--ai", action="store_true", help="Include local AI summary in Telegram message")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors in table output")
     parser.add_argument("--no-progress", action="store_true", help="Disable file scanning progress indicator")
     parser.add_argument(
@@ -175,11 +178,26 @@ def main(argv: list[str] | None = None) -> int:
         out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
     if args.telegram_bot_token and args.telegram_chat_id:
+        save_telegram_credentials(args.telegram_bot_token, str(args.telegram_chat_id))
+
+    saved_token, saved_chat_id = load_telegram_credentials()
+    tg_token = args.telegram_bot_token or saved_token
+    tg_chat_id = args.telegram_chat_id or saved_chat_id
+
+    if args.tg and tg_token and tg_chat_id:
+        ai_summary = None
+        if args.ai:
+            ai_summary = summarize_findings_with_ollama(
+                findings,
+                model=args.llm_model,
+                endpoint=args.llm_endpoint,
+            )
         send_telegram_alert(
-            bot_token=args.telegram_bot_token,
-            chat_id=args.telegram_chat_id,
+            bot_token=tg_token,
+            chat_id=str(tg_chat_id),
             repo=root.name,
             findings=findings,
+            ai_summary=ai_summary,
         )
 
     return 2 if should_fail(report, fail_on) else 0
