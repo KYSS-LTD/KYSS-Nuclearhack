@@ -81,6 +81,29 @@ secrethawk . --tg
 secrethawk . --tg --ai --llm-model llama3.2:3b
 ```
 
+
+## Web-интерфейс (локальный FastAPI)
+
+Запуск локального web-интерфейса:
+
+```bash
+secrethawk-web
+```
+
+После запуска откройте `http://127.0.0.1:8000`.
+
+Основные разделы:
+- Dashboard: сводка последнего сканирования, запуск скана и загрузка JSON отчёта от CLI.
+- Findings: таблица находок с фильтрацией, сортировкой, bulk-действиями (ignore/false-positive/Jira).
+- Finding details: детальная карточка, контекст, рекомендации и кнопка `Explain with AI` (Ollama).
+- Scan history: история всех запусков с сохранением в SQLite (`.secrethawk-web.db`).
+- Git History Leaks: отдельный просмотр утечек, найденных в истории Git.
+- Settings: настройка scanner-конфига, Jira, локальной LLM (сохранение в `nuclear.toml`).
+- Notifications: Telegram-настройки и тестовое уведомление.
+- Export: JSON/HTML/SARIF выгрузка отчётов.
+
+Web-часть полностью локальная, внешние интеграции (Ollama/Jira/Telegram) опциональны.
+
 ## Полный справочник по CLI
 
 ```bash
