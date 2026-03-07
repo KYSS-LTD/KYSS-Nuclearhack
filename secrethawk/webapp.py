@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
 import threading
 from collections import Counter
 from datetime import datetime, timezone
@@ -736,7 +737,13 @@ def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_
     jira_url = _normalize_jira_url(str(cfg.get("url", "")))
     key = project_key or cfg.get("default_project")
     if not jira_url or not key:
+        print(
+            f"[JIRA] Skipped: missing jira_url or project key (jira_url={jira_url!r}, project_key={key!r})",
+            file=sys.stderr,
+        )
         return
+
+    print(f"[JIRA] Starting bulk issue creation: items={len(rows)}, jira_url={jira_url}, project={key}", file=sys.stderr)
 
     for row in rows:
         description = (
@@ -763,8 +770,13 @@ def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_
         import base64
 
         try:
+            issue_url = f"{jira_url}/rest/api/2/issue"
+            print(
+                f"[JIRA] Creating issue for finding_id={row['id']} at {issue_url}",
+                file=sys.stderr,
+            )
             req = request.Request(
-                f"{jira_url}/rest/api/2/issue",
+                issue_url,
                 data=json.dumps(payload).encode("utf-8"),
                 method="POST",
                 headers={
@@ -772,9 +784,16 @@ def _create_jira_issues(rows: list[sqlite3.Row], project_key: str | None, issue_
                     "Authorization": f"Basic {base64.b64encode(auth).decode('utf-8')}",
                 },
             )
-            with request.urlopen(req, timeout=10):
-                pass
-        except Exception:
+            with request.urlopen(req, timeout=10) as response:
+                print(
+                    f"[JIRA] Success for finding_id={row['id']}, status={getattr(response, 'status', 'unknown')}",
+                    file=sys.stderr,
+                )
+        except Exception as exc:
+            print(
+                f"[JIRA] Error for finding_id={row['id']}: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
             continue
 
 
