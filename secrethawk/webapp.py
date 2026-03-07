@@ -1079,7 +1079,7 @@ def export_report(run_id: int, format: str = Query(default="json")) -> Response:
     return PlainTextResponse("Unsupported format", status_code=400)
 
 
-def run() -> None:
+def run(host: str = "127.0.0.1", port: int = 8000) -> None:
     import uvicorn
 
-    uvicorn.run("secrethawk.webapp:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("secrethawk.webapp:app", host=host, port=port, reload=False)

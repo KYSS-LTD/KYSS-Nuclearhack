@@ -87,10 +87,12 @@ secrethawk . --tg --ai --llm-model llama3.2:3b
 Запуск локального web-интерфейса:
 
 ```bash
-secrethawk-web
+secrethawk --web
 ```
 
 После запуска откройте `http://127.0.0.1:8000`.
+
+> Windows note: if you get `WinError 32` for `secrethawk-web.exe` during upgrade, stop the running web UI process first and use `secrethawk --web` after upgrade.
 
 Основные разделы:
 - Dashboard: сводка последнего сканирования, запуск скана и загрузка JSON отчёта от CLI.
