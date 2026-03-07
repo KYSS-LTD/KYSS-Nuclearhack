@@ -229,22 +229,46 @@ def _layout(title: str, body: str) -> str:
       <meta name="viewport" content="width=device-width,initial-scale=1" />
       <title>{escape(title)} - SecretHawk Web</title>
       <style>
-        body {{ font-family: Arial, sans-serif; margin: 0; background: #fafafa; color: #222; }}
-        nav {{ background: #111827; padding: 12px 18px; }}
-        nav a {{ color: #fff; text-decoration: none; margin-right: 14px; font-size: 14px; }}
-        main {{ padding: 16px 24px; max-width: 1200px; margin: auto; }}
-        .grid {{ display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 14px 0; }}
-        .card {{ background: #fff; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; }}
-        table {{ width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7eb; }}
-        th, td {{ border-bottom: 1px solid #ececec; text-align: left; padding: 8px; font-size: 13px; }}
-        th {{ background: #f3f4f6; }}
+        :root {{
+          --bg: #f3f6fb;
+          --surface: #ffffff;
+          --surface-soft: #f8fafc;
+          --text: #1f2937;
+          --muted: #64748b;
+          --border: #e2e8f0;
+          --brand: #2563eb;
+          --brand-dark: #1e40af;
+        }}
+        * {{ box-sizing: border-box; }}
+        body {{ font-family: Inter, Segoe UI, Arial, sans-serif; margin: 0; background: linear-gradient(180deg, #eef2ff 0, var(--bg) 240px); color: var(--text); }}
+        nav {{ position: sticky; top: 0; z-index: 20; background: rgba(17,24,39,.93); backdrop-filter: blur(6px); padding: 14px 22px; box-shadow: 0 8px 24px rgba(15,23,42,.16); }}
+        nav a {{ color: #e2e8f0; text-decoration: none; margin-right: 14px; font-size: 14px; padding: 8px 10px; border-radius: 8px; }}
+        nav a:hover {{ background: rgba(255,255,255,.12); color: #fff; }}
+        main {{ padding: 18px 24px 32px; max-width: 1240px; margin: auto; }}
+        h1 {{ margin: 8px 0 16px; font-size: 30px; }}
+        h3 {{ margin-top: 18px; margin-bottom: 8px; color: #334155; }}
+        .grid {{ display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 14px 0; }}
+        .card {{ background: var(--surface); border: 1px solid var(--border); padding: 14px; border-radius: 12px; box-shadow: 0 4px 14px rgba(15,23,42,.05); }}
+        .section {{ background: var(--surface); border: 1px solid var(--border); padding: 14px; border-radius: 12px; margin-top: 12px; box-shadow: 0 4px 14px rgba(15,23,42,.05); }}
+        .section form {{ margin-top: 8px; }}
+        table {{ width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }}
+        th, td {{ border-bottom: 1px solid #edf2f7; text-align: left; padding: 10px; font-size: 13px; vertical-align: top; }}
+        th {{ background: var(--surface-soft); color: #334155; font-weight: 600; }}
+        tr:hover td {{ background: #f8fbff; }}
         .sev-critical {{ color: #b91c1c; font-weight: bold; }}
         .sev-high {{ color: #92400e; font-weight: bold; }}
         .sev-medium {{ color: #1d4ed8; }}
-        .pill {{ background: #e5e7eb; border-radius: 999px; padding: 3px 8px; font-size: 12px; }}
+        .pill {{ display: inline-block; background: #dbeafe; color: #1e3a8a; border-radius: 999px; padding: 4px 9px; font-size: 12px; margin: 2px 4px 2px 0; }}
         form.inline {{ display:inline; }}
-        textarea, input, select {{ width: 100%; padding: 8px; margin: 6px 0 10px; box-sizing: border-box; }}
-        button {{ padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; background:#111827; color:#fff; }}
+        textarea, input, select {{ width: 100%; padding: 9px 10px; margin: 6px 0 10px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; }}
+        textarea:focus, input:focus, select:focus {{ outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }}
+        button {{ padding: 9px 13px; border: none; border-radius: 10px; cursor: pointer; background: var(--brand); color:#fff; font-weight: 600; }}
+        button:hover {{ background: var(--brand-dark); }}
+        code, pre {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }}
+        pre {{ padding: 10px; overflow-x: auto; }}
+        hr {{ border: none; border-top: 1px solid var(--border); margin: 16px 0; }}
+        @media (max-width: 1000px) {{ .grid {{ grid-template-columns: repeat(2,minmax(0,1fr)); }} }}
+        @media (max-width: 700px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 14px; }} nav {{ padding: 10px 12px; }} nav a {{ display:inline-block; margin-bottom: 6px; }} }}
       </style>
     </head>
     <body>
@@ -414,6 +438,7 @@ def dashboard() -> str:
           <h1>Dashboard</h1>
           <p class='card'>Сканирования в web-базе не найдены. Вы можете запустить скан или загрузить JSON-отчёт CLI.</p>
           {status_note}
+          <section class='section'>
           <h3>Start scan</h3>
           <form method='post' action='/api/scan/start'>
             <label>Repository path</label><input name='repo_path' value='.' />
@@ -422,22 +447,29 @@ def dashboard() -> str:
             <label>Max commits</label><input name='max_commits' value='200' />
             <button type='submit'>Run scan</button>
           </form>
+          </section>
+          <section class='section'>
           <h3>Upload JSON report</h3>
           <form method='post' enctype='multipart/form-data' action='/api/reports/upload'>
             <input type='file' name='report_file' />
             <input type='text' name='repo_path' placeholder='repo path' value='.' />
             <button type='submit'>Upload</button>
           </form>
+          </section>
+          <section class='section'>
           <h3>Sync existing CLI reports</h3>
           <form method='post' action='/api/reports/sync'>
             <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
             <button type='submit'>Sync reports from disk</button>
           </form>
+          </section>
+          <section class='section'>
           <h3>Quick analysis (paste code)</h3>
           <form method='post' action='/api/analyze/text'>
             <textarea name='content' rows='8' placeholder='Paste code or config text'></textarea>
             <button type='submit'>Analyze text</button>
           </form>
+          </section>
         """
         return _layout("Dashboard", body)
 
@@ -452,11 +484,14 @@ def dashboard() -> str:
         <div class='card'><b>Scanned commits</b><div>{run['scanned_commits']}</div></div>
       </div>
       <div class='card'><b>Last scan:</b> {escape(run['finished_at'] or run['started_at'])}</div>
+      <section class='section'>
       <h3>Secret types</h3>
       <div>{_risk_chart_data(rows)}</div>
       <h3>Top files</h3>
       {_top_files_data(rows)}
+      </section>
       <hr/>
+      <section class='section'>
       <h3>Start scan</h3>
       <form method='post' action='/api/scan/start'>
         <label>Repository path</label><input name='repo_path' value='{escape(run['repo_path'])}' />
@@ -465,22 +500,29 @@ def dashboard() -> str:
         <label>Max commits</label><input name='max_commits' value='200' />
         <button type='submit'>Run scan</button>
       </form>
+      </section>
+      <section class='section'>
       <h3>Upload JSON report</h3>
       <form method='post' enctype='multipart/form-data' action='/api/reports/upload'>
         <input type='file' name='report_file' />
         <input type='text' name='repo_path' placeholder='repo path' />
         <button type='submit'>Upload</button>
       </form>
+      </section>
+      <section class='section'>
       <h3>Sync existing CLI reports</h3>
       <form method='post' action='/api/reports/sync'>
         <input type='text' name='base_dir' placeholder='base dir (optional)' value='.' />
         <button type='submit'>Sync reports from disk</button>
       </form>
+      </section>
+      <section class='section'>
       <h3>Quick analysis (paste code)</h3>
       <form method='post' action='/api/analyze/text'>
         <textarea name='content' rows='8' placeholder='Paste code or config text'></textarea>
         <button type='submit'>Analyze text</button>
       </form>
+      </section>
     """
     return _layout("Dashboard", body)
 
@@ -532,6 +574,7 @@ def findings_page(
 
     body = f"""
     <h1>Findings</h1>
+    <section class='section'>
     <form method='get'>
       <div class='grid'>
         <div><label>Severity</label><input name='severity' value='{escape(severity or '')}' /></div>
@@ -541,6 +584,8 @@ def findings_page(
       </div>
       <button type='submit'>Apply filters</button>
     </form>
+    </section>
+    <section class='section'>
     <form id='bulk-form' method='post' action='/api/findings/bulk-action'>
       <select name='action'>
         <option value='ignore'>Ignore</option>
@@ -553,10 +598,13 @@ def findings_page(
       <input name='assignee' placeholder='assignee (optional)' />
       <button type='submit'>Apply for selected</button>
     </form>
+    </section>
+    <section class='section'>
     <table>
       <tr><th></th><th>Severity</th><th>Type</th><th>Detector</th><th>File</th><th>Line</th><th>Entropy</th><th>Snippet</th><th></th></tr>
       {''.join(table_rows)}
     </table>
+    </section>
     """
     return _layout("Findings", body)
 
