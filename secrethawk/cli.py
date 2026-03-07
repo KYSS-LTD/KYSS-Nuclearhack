@@ -47,7 +47,7 @@ def mask_sensitive_text(snippet: str) -> str:
         if len(clean) < 12:
             masked_tokens.append(token)
             continue
-        masked = f"{clean[:4]}{'*' * (len(clean) - 8)}{clean[-4:]}"
+        masked = f"{clean[:4]}**{clean[-4:]}"
         masked_tokens.append(token.replace(clean, masked, 1))
     return " ".join(masked_tokens)
 
@@ -66,10 +66,12 @@ def render_table(report: ScanReport, use_color: bool = True) -> str:
     for finding in report.findings:
         location = f"{finding.file_path}:{finding.line_number}"
         severity = _colorize(f"{finding.severity:<10}", finding.severity, use_color)
+        fix_summary = "; ".join(finding.remediation[:2])
         lines.append(
             f"{severity} {finding.detector:<8} {finding.secret_type:<24} {location:<45} "
-            f"{mask_sensitive_text(finding.snippet)} | Why: {finding.explanation} | Fix: {'; '.join(finding.remediation[:2])}"
+            f"{mask_sensitive_text(finding.snippet)}"
         )
+        lines.append(f"{'':<10} {'':<8} {'':<24} {'':<45} Hint: {finding.explanation} | Fix: {fix_summary}")
     return "\n".join(lines)
 
 
