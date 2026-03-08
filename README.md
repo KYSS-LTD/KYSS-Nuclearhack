@@ -2,6 +2,8 @@
 
 Система автоматического обнаружения утечек секретов в исходном коде и Git-истории.
 
+Презентация: https://docs.google.com/presentation/d/1SzPrzc1OrTACTHcMSkYuliGC0tMRxgb59kc1yqQ34T4/edit?usp=sharing
+
 ## Возможности
 
 - CLI-сканер на Python для локального запуска и CI/CD.
